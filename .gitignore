@@ -1,0 +1,19 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Data output (raw observations — regenerable)
+data/*.json
+data/*.csv
+data/*.npz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,7 @@
+﻿# ABRCE Relational Weather Analysis
+# No external dependencies — Python stdlib only.
+# This file exists for documentation and future use.
+#
+# If visualization is added later:
+# matplotlib>=3.7
+# numpy>=1.24
