@@ -32,37 +32,37 @@ from urllib.error import URLError, HTTPError
 # ===================================================================
 
 STATIONS = {
-    "KSBA": {
+    "SBA": {
         "name": "Santa Barbara Municipal",
         "lat": 34.4241, "lon": -119.8425, "elev_ft": 10,
         "context": "coastal, south-facing, lee of Santa Ynez Mtns"
     },
-    "KSMX": {
+    "SMX": {
         "name": "Santa Maria Public",
         "lat": 34.8941, "lon": -120.4522, "elev_ft": 261,
         "context": "inland valley, north of mountains"
     },
-    "KVBG": {
+    "VBG": {
         "name": "Vandenberg SFB",
         "lat": 34.7334, "lon": -120.5840, "elev_ft": 369,
         "context": "coastal headland, exposed to NW flow"
     },
-    "KOXR": {
+    "OXR": {
         "name": "Oxnard / Ventura",
         "lat": 34.2010, "lon": -119.2070, "elev_ft": 45,
         "context": "coastal plain, SE of Santa Barbara"
     },
-    "KSBP": {
+    "SBP": {
         "name": "San Luis Obispo",
         "lat": 35.2381, "lon": -120.6441, "elev_ft": 212,
         "context": "inland valley, far north, different air mass boundary"
     },
-    "KLPC": {
+    "LPC": {
         "name": "Lompoc",
         "lat": 34.6656, "lon": -120.4685, "elev_ft": 88,
         "context": "Santa Ynez River valley, inland of Vandenberg"
     },
-    "KIZA": {
+    "IZA": {
         "name": "Santa Ynez",
         "lat": 34.6068, "lon": -119.8813, "elev_ft": 671,
         "context": "mountain valley, north side of Santa Ynez Mtns"
@@ -70,23 +70,23 @@ STATIONS = {
 }
 
 EDGES = [
-    ("KVBG", "KLPC", "strong",
+    ("VBG", "LPC", "strong",
      "VBG coastal flow enters Lompoc valley directly"),
-    ("KVBG", "KSMX", "strong",
+    ("VBG", "SMX", "strong",
      "NW flow path, same side of mountains"),
-    ("KLPC", "KSMX", "strong",
+    ("LPC", "SMX", "strong",
      "valley-to-valley, no barrier"),
-    ("KLPC", "KIZA", "moderate",
+    ("LPC", "IZA", "moderate",
      "connected via Santa Ynez River valley but elevation change"),
-    ("KIZA", "KSBA", "moderate",
+    ("IZA", "SBA", "moderate",
      "mountain pass coupling, San Marcos / Cold Spring"),
-    ("KSMX", "KIZA", "moderate",
+    ("SMX", "IZA", "moderate",
      "indirect, through Lompoc valley or over ridge"),
-    ("KSBA", "KOXR", "moderate",
+    ("SBA", "OXR", "moderate",
      "along coast but 65km apart, Rincon point between"),
-    ("KSMX", "KSBP", "weak",
+    ("SMX", "SBP", "weak",
      "100km, different synoptic regime boundary"),
-    ("KVBG", "KSBP", "weak",
+    ("VBG", "SBP", "weak",
      "far north, connected only in strong synoptic events"),
 ]
 

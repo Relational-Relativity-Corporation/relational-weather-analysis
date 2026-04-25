@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ABRCE Weather — Relational Structure Dashboard</title>
+<style>
+  :root {
+    --bg: #fafaf8; --bg2: #f0efe8; --bg3: #e8e7e0;
+    --text: #2c2c2a; --text2: #5f5e5a; --text3: #88878080;
+    --border: #b4b2a940; --border2: #88878050;
+    --blue: rgba(59,139,212,0.7); --amber: rgba(239,159,39,0.7);
+    --info: #185fa5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18; --bg2: #2c2c2a; --bg3: #3d3d3a;
+      --text: #e8e7e0; --text2: #b4b2a9; --text3: #88878080;
+      --border: #5f5e5a40; --border2: #88878050;
+      --info: #85b7eb;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 16px; max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  h2 { font-size: 14px; font-weight: 400; color: var(--text2); margin-bottom: 16px; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .btn { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); cursor: pointer; font-size: 13px; }
+  .btn:hover { background: var(--bg3); }
+  .btn.active { border-color: var(--info); background: rgba(59,139,212,0.1); font-weight: 500; }
+  .var-btns { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; }
+  .var-btns .btn { font-size: 11px; padding: 3px 10px; }
+  .time-label { font-size: 14px; font-weight: 500; min-width: 120px; text-align: right; }
+  input[type=range] { flex: 1; min-width: 100px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  th { text-align: right; padding: 4px 8px; font-weight: 500; color: var(--text2); border-bottom: 1px solid var(--border); }
+  th:first-child { text-align: left; }
+  td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+  td:first-child { text-align: left; font-weight: 500; }
+  .mono { font-family: ui-monospace, monospace; font-size: 11px; }
+  .moist { color: var(--info); }
+  .offline { opacity: 0.35; }
+  .legend { font-size: 10px; fill: var(--text2); }
+</style>
+</head>
+<body>
+
+<h1>ABRCE Relational Weather Analysis</h1>
+<h2>Santa Barbara County station graph — operator outputs on raw observations</h2>
+
+<div class="controls">
+  <button class="btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
+  <input type="range" id="slider" min="0" max="7" value="7" oninput="setSnap(+this.value)">
+  <span class="time-label" id="timeLabel"></span>
+</div>
+<div class="var-btns" id="varBtns"></div>
+
+<svg id="graph" viewBox="0 0 680 480" width="100%"></svg>
+
+<table id="dataTable"></table>
+
+<script>
+const STATIONS = {
+  SBP:{x:195,y:78,name:"San Luis Obispo",elev:212},
+  SMX:{x:155,y:138,name:"Santa Maria",elev:261},
+  VBG:{x:125,y:198,name:"Vandenberg SFB",elev:369},
+  LPC:{x:218,y:168,name:"Lompoc",elev:88},
+  IZA:{x:325,y:228,name:"Santa Ynez",elev:671},
+  SBA:{x:435,y:388,name:"Santa Barbara",elev:10},
+  OXR:{x:545,y:398,name:"Oxnard/Ventura",elev:45},
+};
+const sids = Object.keys(STATIONS);
+
+const EDGES = [
+  ["VBG","LPC","strong"],["VBG","SMX","strong"],["LPC","SMX","strong"],
+  ["LPC","IZA","moderate"],["IZA","SBA","moderate"],["SMX","IZA","moderate"],
+  ["SBA","OXR","moderate"],["SMX","SBP","weak"],["VBG","SBP","weak"],
+];
+
+const SNAPS = [
+  {time:"Apr 23 17:00",raw:{IZA:{t:60.8,td:48.2},LPC:{t:null},OXR:{t:67,td:41},SBA:{t:65,td:48},SBP:{t:62,td:46},SMX:{t:65,td:43},VBG:{t:67.6,td:47.3}},r_t:{IZA:-0.002,LPC:null,OXR:0,SBA:-1.669,SBP:-0.154,SMX:-0.332,VBG:-0.602},r_td:{IZA:0.190,LPC:null,OXR:0,SBA:-0.801,SBP:0,SMX:0.295,VBG:-0.102},e_t:{IZA:-0.002,LPC:null,OXR:0,SBA:-0.625,SBP:-0.133,SMX:-0.249,VBG:-0.376},rho:{IZA:0.242,LPC:null,OXR:0.200,SBA:0.242,SBP:0.255,SMX:0.242,VBG:0.255}},
+  {time:"Apr 23 21:00",raw:{IZA:{t:51.8,td:46.4},LPC:{t:55.4,td:50},OXR:{t:58,td:46},SBA:{t:59,td:50},SBP:{t:54,td:46},SMX:{t:57,td:44},VBG:{t:57.2,td:50}},r_t:{IZA:0.019,LPC:0.135,OXR:0,SBA:0.975,SBP:-0.068,SMX:0.119,VBG:-0.232},r_td:{IZA:-0.135,LPC:-0.219,OXR:0,SBA:0.829,SBP:0.022,SMX:0.210,VBG:0.050},e_t:{IZA:0.019,LPC:0.119,OXR:0,SBA:0.724,SBP:-0.064,SMX:0.106,VBG:-0.189},rho:{IZA:0.237,LPC:0.193,OXR:0.200,SBA:0.263,SBP:0.176,SMX:0.225,VBG:0.200}},
+  {time:"Apr 24 05:00",raw:{IZA:{t:42.8,td:41},LPC:{t:48.2,td:46.4},OXR:{t:54,td:48},SBA:{t:55,td:50},SBP:{t:46,td:42},SMX:{t:45,td:43},VBG:{t:50,td:48.2}},r_t:{IZA:-0.042,LPC:-0.384,OXR:0,SBA:-0.848,SBP:0.110,SMX:0.050,VBG:0.306},r_td:{IZA:0.011,LPC:-0.013,OXR:0,SBA:-0.361,SBP:-0.016,SMX:-0.042,VBG:0.019},e_t:{IZA:-0.040,LPC:-0.278,OXR:0,SBA:-0.635,SBP:0.099,SMX:0.048,VBG:0.234},rho:{IZA:0.268,LPC:0.225,OXR:0.200,SBA:0.244,SBP:0.255,SMX:0.268,VBG:0.255}},
+  {time:"Apr 24 12:00",raw:{IZA:{t:55.4,td:44.6},LPC:{t:60.8,td:44.6},OXR:{t:66,td:42},SBA:{t:64,td:45},SBP:{t:60,td:44},SMX:{t:62,td:40},VBG:{t:62.6,td:44.6}},r_t:{IZA:-0.017,LPC:0.194,OXR:0,SBA:-1.193,SBP:-0.115,SMX:-0.181,VBG:-0.461},r_td:{IZA:-0.062,LPC:-0.148,OXR:0,SBA:-0.696,SBP:-0.038,SMX:-0.157,VBG:0.121},e_t:{IZA:-0.017,LPC:0.163,OXR:0,SBA:-0.784,SBP:-0.103,SMX:-0.153,VBG:-0.316},rho:{IZA:0.260,LPC:0.213,OXR:0.200,SBA:0.273,SBP:0.218,SMX:0.249,VBG:0.255}},
+  {time:"Apr 24 18:00",raw:{IZA:{t:57.2,td:48.2},LPC:{t:null},OXR:{t:64,td:48},SBA:{t:63,td:50},SBP:{t:58,td:48},SMX:{t:59,td:46},VBG:{t:null}},r_t:{IZA:-0.032,LPC:null,OXR:0,SBA:-0.686,SBP:-0.069,SMX:-0.089,VBG:null},r_td:{IZA:-0.023,LPC:null,OXR:0,SBA:-0.354,SBP:-0.016,SMX:0.016,VBG:null},e_t:{IZA:-0.031,LPC:null,OXR:0,SBA:-0.509,SBP:-0.064,SMX:-0.082,VBG:null},rho:{IZA:0.237,LPC:null,OXR:0.200,SBA:0.212,SBP:0.200,SMX:0.207,VBG:null}},
+  {time:"Apr 25 03:00",raw:{IZA:{t:46.4,td:44.6},LPC:{t:null},OXR:{t:54,td:48},SBA:{t:56,td:50},SBP:{t:48,td:44},SMX:{t:50,td:44},VBG:{t:null}},r_t:{IZA:-0.089,LPC:null,OXR:0,SBA:-0.830,SBP:0,SMX:0.049,VBG:null},r_td:{IZA:0.016,LPC:null,OXR:0,SBA:-0.147,SBP:0,SMX:0.045,VBG:null},e_t:{IZA:-0.082,LPC:null,OXR:0,SBA:-0.617,SBP:0,SMX:0.047,VBG:null},rho:{IZA:0.261,LPC:null,OXR:0.200,SBA:0.268,SBP:0.200,SMX:0.237,VBG:null}},
+  {time:"Apr 25 10:00",raw:{IZA:{t:50,td:46.4},LPC:{t:null},OXR:{t:59,td:53},SBA:{t:57,td:52},SBP:{t:54,td:48},SMX:{t:56,td:48},VBG:{t:null}},r_t:{IZA:0.094,LPC:null,OXR:0,SBA:-0.739,SBP:0,SMX:0.015,VBG:null},r_td:{IZA:-0.030,LPC:null,OXR:0,SBA:-0.318,SBP:0,SMX:0.054,VBG:null},e_t:{IZA:0.086,LPC:null,OXR:0,SBA:-0.538,SBP:0,SMX:0.015,VBG:null},rho:{IZA:0.268,LPC:null,OXR:0.200,SBA:0.250,SBP:0.200,SMX:0.237,VBG:null}},
+  {time:"Apr 25 15:00",raw:{IZA:{t:53.6,td:46.4},LPC:{t:null},OXR:{t:62,td:54},SBA:{t:59,td:51},SBP:{t:56,td:50},SMX:{t:57,td:48},VBG:{t:null}},r_t:{IZA:1.062,LPC:null,OXR:0,SBA:-1.239,SBP:0,SMX:0.082,VBG:null},r_td:{IZA:-0.203,LPC:null,OXR:0,SBA:-0.119,SBP:0,SMX:-0.132,VBG:null},e_t:{IZA:0.515,LPC:null,OXR:0,SBA:-0.553,SBP:0,SMX:0.076,VBG:null},rho:{IZA:0.237,LPC:null,OXR:0.200,SBA:0.253,SBP:0.200,SMX:0.225,VBG:null}},
+];
+
+const VARS = [
+  {key:"r_t",label:"Temperature circulation (R)"},
+  {key:"r_td",label:"Moisture circulation (R)"},
+  {key:"e_t",label:"Temperature evolution (E)"},
+  {key:"rho",label:"Gradient strength (ρ)"},
+];
+
+let snapIdx = SNAPS.length-1, varIdx = 0, playing = false, playTimer = null;
+
+function init() {
+  document.getElementById("slider").max = SNAPS.length-1;
+  document.getElementById("slider").value = snapIdx;
+  const vb = document.getElementById("varBtns");
+  VARS.forEach((v,i) => {
+    const b = document.createElement("button");
+    b.className = "btn" + (i===0?" active":"");
+    b.textContent = v.label;
+    b.onclick = () => { varIdx=i; document.querySelectorAll(".var-btns .btn").forEach((b2,j)=>{b2.className="btn"+(j===i?" active":"")}); render(); };
+    vb.appendChild(b);
+  });
+  render();
+}
+
+function setSnap(i) { playing=false; clearInterval(playTimer); document.getElementById("playBtn").textContent="▶ Play"; snapIdx=i; render(); }
+
+function togglePlay() {
+  if(playing){playing=false;clearInterval(playTimer);document.getElementById("playBtn").textContent="▶ Play";return;}
+  if(snapIdx>=SNAPS.length-1)snapIdx=0;
+  playing=true;document.getElementById("playBtn").textContent="⏸ Pause";
+  playTimer=setInterval(()=>{
+    snapIdx++;document.getElementById("slider").value=snapIdx;
+    if(snapIdx>=SNAPS.length-1){playing=false;clearInterval(playTimer);document.getElementById("playBtn").textContent="▶ Play";}
+    render();
+  },1200);
+}
+
+function valColor(v,mx){
+  if(v==null)return"var(--border2)";
+  const n=Math.min(Math.abs(v)/(mx||1),1);
+  return v>0?`rgba(239,159,39,${0.15+n*0.85})`:`rgba(59,139,212,${0.15+n*0.85})`;
+}
+
+function maxAbsAll(key){
+  let m=0;SNAPS.forEach(s=>{const d=s[key];if(d)Object.values(d).forEach(v=>{if(v!=null)m=Math.max(m,Math.abs(v))})});return m||1;
+}
+
+function render(){
+  const snap=SNAPS[snapIdx], vk=VARS[varIdx].key;
+  document.getElementById("timeLabel").textContent=snap.time;
+  document.getElementById("slider").value=snapIdx;
+  const mx=maxAbsAll(vk);
+
+  // Compute gradients
+  const grads={},gvals=[];
+  EDGES.forEach(([a,b])=>{
+    const ra=snap.raw[a],rb=snap.raw[b];
+    if(ra?.t!=null&&rb?.t!=null){const g=ra.t-rb.t;grads[a+"-"+b]=g;gvals.push(Math.abs(g));}
+    else grads[a+"-"+b]=null;
+  });
+  const mxG=Math.max(...gvals,1);
+
+  let svg=`<defs><marker id="ca" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1L7 4L1 7" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round"/></marker></defs>`;
+
+  // Mountain ridge
+  svg+=`<path d="M40 310Q140 270 240 290Q340 260 440 280Q520 265 640 290" fill="none" stroke="var(--border2)" stroke-width="0.8" stroke-dasharray="4 4" opacity="0.4"/>`;
+  svg+=`<text x="555" y="268" class="legend" style="font-size:10px">Santa Ynez Mtns</text>`;
+  // Coast
+  svg+=`<path d="M40 430Q180 445 320 455Q440 460 560 445Q630 435 670 440" fill="none" stroke="var(--border2)" stroke-width="0.8" stroke-dasharray="6 3" opacity="0.3"/>`;
+
+  // Edges
+  EDGES.forEach(([a,b,ct])=>{
+    const sa=STATIONS[a],sb=STATIONS[b],g=grads[a+"-"+b];
+    const dash=ct==="weak"?"4 4":ct==="moderate"?"6 3":"none";
+    const op=ct==="weak"?0.3:ct==="moderate"?0.5:0.7;
+    const col=g!=null?valColor(g,mxG):"var(--border2)";
+    const sw=g!=null?1+Math.min(Math.abs(g)/mxG,1)*2.5:1;
+    svg+=`<line x1="${sa.x}" y1="${sa.y}" x2="${sb.x}" y2="${sb.y}" stroke="${col}" stroke-width="${sw}" stroke-dasharray="${dash}" opacity="${op}"/>`;
+  });
+
+  // Nodes
+  sids.forEach(id=>{
+    const s=STATIONS[id],val=snap[vk]?.[id],raw=snap.raw[id];
+    const off=raw?.t==null;
+    const rhoV=snap.rho?.[id];
+    const nr=rhoV!=null?12+rhoV*30:12;
+    const fill=off?"var(--bg3)":valColor(val,mx);
+    const tdDep=raw?.t!=null&&raw?.td!=null?raw.t-raw.td:null;
+
+    // Circulation arc
+    if(vk.startsWith("r_")&&val!=null&&Math.abs(val)>0.01){
+      const mag=Math.min(Math.abs(val)/1.5,1),sw=1+mag*2.5;
+      const dir=val>0?1:0,col2=val>0?"rgba(239,159,39,0.8)":"rgba(59,139,212,0.8)";
+      const r2=nr+8;
+      svg+=`<path d="M ${s.x-r2} ${s.y} A ${r2} ${r2} 0 1 ${dir} ${s.x+r2} ${s.y}" fill="none" stroke="${col2}" stroke-width="${sw}" opacity="${0.5+mag*0.5}" stroke-linecap="round" marker-end="url(#ca)"/>`;
+    }
+
+    svg+=`<circle cx="${s.x}" cy="${s.y}" r="${nr}" fill="${fill}" stroke="${off?"var(--border2)":"var(--border)"}" stroke-width="0.8" opacity="${off?0.4:0.9}"/>`;
+    svg+=`<text x="${s.x}" y="${s.y+1}" text-anchor="middle" dominant-baseline="central" style="font-size:10px;font-weight:500;fill:${off?"var(--text3)":"var(--text)"}">${id}</text>`;
+
+    if(!off&&val!=null){
+      svg+=`<text x="${s.x}" y="${s.y+nr+12}" text-anchor="middle" style="font-size:10px;fill:var(--text2)">${val>0?"+":""}${val.toFixed(3)}</text>`;
+    }
+
+    if(tdDep!=null){
+      const bg2=tdDep<5?"rgba(59,139,212,0.25)":tdDep<12?"rgba(29,158,117,0.2)":"transparent";
+      const tc=tdDep<8?"var(--info)":"var(--text2)";
+      svg+=`<rect x="${s.x+nr+2}" y="${s.y-8}" width="32" height="16" rx="4" fill="${bg2}" stroke="var(--border2)" stroke-width="0.5"/>`;
+      svg+=`<text x="${s.x+nr+18}" y="${s.y+1}" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:${tc}">${tdDep.toFixed(0)}°F</text>`;
+    }
+  });
+
+  // Legend
+  svg+=`<g transform="translate(20,455)"><rect width="200" height="20" rx="4" fill="var(--bg2)" stroke="var(--border2)" stroke-width="0.5" opacity="0.8"/>`;
+  svg+=`<circle cx="12" cy="10" r="5" fill="rgba(59,139,212,0.7)"/><text x="22" y="14" class="legend">negative</text>`;
+  svg+=`<circle cx="80" cy="10" r="5" fill="var(--border2)"/><text x="90" y="14" class="legend">zero/none</text>`;
+  svg+=`<circle cx="148" cy="10" r="5" fill="rgba(239,159,39,0.7)"/><text x="158" y="14" class="legend">positive</text></g>`;
+  svg+=`<text x="240" y="469" class="legend">Node size = ρ · Badge = Td depression · ${VARS[varIdx].label}</text>`;
+
+  document.getElementById("graph").innerHTML=svg;
+
+  // Table
+  let tbl=`<thead><tr><th style="text-align:left">Station</th><th>T (°F)</th><th>Td dep</th><th>T circ (R)</th><th>Td circ (R)</th><th>T evol (E)</th><th>ρ</th></tr></thead><tbody>`;
+  sids.forEach(id=>{
+    const raw=snap.raw[id],off=raw?.t==null;
+    const tdDep=raw?.t!=null&&raw?.td!=null?raw.t-raw.td:null;
+    const cls=off?' class="offline"':"";
+    const moistCls=tdDep!=null&&tdDep<8?' class="moist mono"':' class="mono"';
+    const f=(v)=>v!=null?(v>0?"+":"")+v.toFixed(3):"—";
+    tbl+=`<tr${cls}><td>${id}</td><td>${raw?.t!=null?raw.t.toFixed(1):"—"}</td>`;
+    tbl+=`<td${moistCls}>${tdDep!=null?tdDep.toFixed(1):"—"}</td>`;
+    tbl+=`<td class="mono">${f(snap.r_t?.[id])}</td>`;
+    tbl+=`<td class="mono">${f(snap.r_td?.[id])}</td>`;
+    tbl+=`<td class="mono">${f(snap.e_t?.[id])}</td>`;
+    tbl+=`<td>${snap.rho?.[id]!=null?snap.rho[id].toFixed(3):"—"}</td></tr>`;
+  });
+  tbl+=`</tbody>`;
+  document.getElementById("dataTable").innerHTML=tbl;
+}
+
+init();
+</script>
+</body>
+</html>

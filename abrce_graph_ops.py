@@ -546,31 +546,19 @@ def track_evolution(graph: StationGraph,
 # SIGNAL EXTRACTION
 # ===================================================================
 
-def extract_precip_signals(graph: StationGraph,
-                           evolution: list) -> dict:
+def extract_precip_signals(graph, evolution):
     """
-    Extract structurally grounded precipitation signals
-    from ABRCE evolution.
+    Extract precipitation-relevant operator outputs from ABRCE evolution.
 
     PROJECTION LAYER DISCIPLINE (per Verifier note):
-        Everything below this line is POST-OPERATOR interpretation.
-        These are observational summaries of what the operators
-        produced -- not operator-layer constructs.
-
+        Everything below is POST-OPERATOR interpretation.
         The operators computed relational structure.
         This function READS that structure and summarizes it.
-        It does NOT feed back into operators or modify their output.
+        It does NOT feed back into operators.
 
-        "Precipitation signal" is a projection-layer label applied
-        to a convergence of operator outputs. The operators do not
-        know what precipitation is. They detected relational
-        gradients, accumulation patterns, and circulation structure.
-        WE interpret those patterns as precipitation-relevant.
-
-        If this interpretation is wrong, the operators are not wrong.
-        The projection is wrong.
-
-    Returns: dict with per-station, per-timestep signal strength
+    NO NORMALIZATION. NO COMPOSITE SCORE.
+        Each component preserved in natural units.
+        The relation BETWEEN components is the signal.
     """
     signals = {}
 
@@ -579,59 +567,66 @@ def extract_precip_signals(graph: StationGraph,
         signals[ts] = {}
 
         for s in graph.node_ids:
-            sig = {"components": {}, "composite": 0.0}
+            sig = {}
 
+            # Moisture state (raw deg F)
             td_dep = result["variables"].get("td_depression", {})
-            td_raw = td_dep.get("raw_values", {}).get(s)
-            if td_raw is not None:
-                sig["components"]["moisture"] = max(0, 1.0 - td_raw / 30.0)
-            else:
-                sig["components"]["moisture"] = None
+            sig["td_depression"] = td_dep.get("raw_values", {}).get(s)
 
+            # Moisture convergence (raw deg F)
             td_a = td_dep.get("a_gradients", {})
-            convergence = 0.0
+            inward_total = 0.0
+            inward_count = 0
             edge_count = 0
             for nb, w in graph.neighbors(s):
                 g = td_a.get(f"{nb}->{s}")
                 if g is not None:
-                    convergence += max(0, g)
                     edge_count += 1
+                    if g > 0:
+                        inward_total += g
+                        inward_count += 1
             if edge_count > 0:
-                sig["components"]["moisture_convergence"] = convergence / edge_count
+                sig["td_convergence_total"] = inward_total
+                sig["td_convergence_edges"] = inward_count
+                sig["td_convergence_mean"] = inward_total / edge_count
             else:
-                sig["components"]["moisture_convergence"] = None
+                sig["td_convergence_total"] = None
+                sig["td_convergence_edges"] = None
+                sig["td_convergence_mean"] = None
 
-            td_circ = td_dep.get("r_circulation", {}).get(s)
-            if td_circ is not None:
-                sig["components"]["moisture_circulation"] = abs(td_circ)
-            else:
-                sig["components"]["moisture_circulation"] = None
+            # Moisture circulation (raw R units)
+            sig["td_circulation"] = td_dep.get("r_circulation", {}).get(s)
+            sig["td_e"] = td_dep.get("e_evolved", {}).get(s)
 
+            # Temperature circulation and evolution
+            sig["temp_circulation"] = result["variables"].get(
+                "tmpf", {}).get("r_circulation", {}).get(s)
+            sig["temp_e"] = result["variables"].get(
+                "tmpf", {}).get("e_evolved", {}).get(s)
+
+            # Pressure
+            sig["pressure_e"] = result["variables"].get(
+                "alti", {}).get("e_evolved", {}).get(s)
+            sig["pressure_rho"] = result["variables"].get(
+                "alti", {}).get("rho", {}).get(s)
+
+            # Temporal deltas
             if t_idx > 0 and "delta_e" in result:
-                p_delta = result["delta_e"].get("alti", {}).get(s)
-                if p_delta is not None:
-                    sig["components"]["pressure_forcing"] = abs(p_delta)
-                else:
-                    sig["components"]["pressure_forcing"] = None
-
-            components = [v for v in sig["components"].values()
-                         if v is not None and v > 0]
-            if components:
-                product = 1.0
-                for c in components:
-                    product *= c
-                sig["composite"] = product ** (1.0 / len(components))
+                sig["td_delta_e"] = result["delta_e"].get(
+                    "td_depression", {}).get(s)
+                sig["temp_delta_e"] = result["delta_e"].get(
+                    "tmpf", {}).get(s)
+                sig["pressure_delta_e"] = result["delta_e"].get(
+                    "alti", {}).get(s)
             else:
-                sig["composite"] = 0.0
+                sig["td_delta_e"] = None
+                sig["temp_delta_e"] = None
+                sig["pressure_delta_e"] = None
 
             signals[ts][s] = sig
 
     return signals
 
-
-# ===================================================================
-# CONVENIENCE
-# ===================================================================
 
 def build_default_graph():
     """Build the SB County station graph from fetch_metar declarations."""

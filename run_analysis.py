@@ -201,7 +201,7 @@ def run_full_evolution(graph, snapshots, rho_base=0.3):
     evolution = track_evolution(graph, snapshots, rho_base)
     print(f"Processed {len(evolution)} time steps")
 
-    target = "KSBA"
+    target = "SBA"
     print(f"\nEvolution at {target} ({STATIONS[target]['name']}):")
     print(f"{'Time':>20s}  {'T_E':>8s}  {'Td_dep_E':>8s}  "
           f"{'P_E':>8s}  {'rho(T)':>8s}")
@@ -230,50 +230,152 @@ def run_full_evolution(graph, snapshots, rho_base=0.3):
 
 
 def run_signal_extraction(graph, evolution):
-    """Step 5: Extract precipitation signals."""
+    """Step 5: Extract precipitation-relevant operator outputs."""
     print("\n" + "=" * 60)
-    print("STEP 5: Precipitation Signal Extraction")
+    print("STEP 5: Structural Signal Extraction (raw units)")
     print("=" * 60)
 
     signals = extract_precip_signals(graph, evolution)
+    if not signals:
+        return signals
 
-    if signals:
-        latest_ts = sorted(signals.keys())[-1]
-        latest = signals[latest_ts]
+    latest_ts = sorted(signals.keys())[-1]
+    latest = signals[latest_ts]
 
-        print(f"\nLatest signals ({latest_ts[:16]}):")
-        print(f"{'Station':>8s}  {'Composite':>10s}  {'Moisture':>10s}  "
-              f"{'Convergence':>12s}  {'Circulation':>12s}")
-        print("-" * 60)
+    def fmt(val, w=7, d=2):
+        return f"{'M':>{w}s}" if val is None else f"{val:>{w}.{d}f}"
 
-        for s in sorted(latest.keys()):
-            sig = latest[s]
-            comp = sig["composite"]
-            moist = sig["components"].get("moisture")
-            conv = sig["components"].get("moisture_convergence")
-            circ = sig["components"].get("moisture_circulation")
+    def fmts(val, w=8, d=4):
+        return f"{'M':>{w}s}" if val is None else f"{val:>+{w}.{d}f}"
 
-            m_str = f"{moist:>10.4f}" if moist is not None else f"{'M':>10s}"
-            c_str = f"{conv:>12.4f}" if conv is not None else f"{'M':>12s}"
-            ci_str = f"{circ:>12.4f}" if circ is not None else f"{'M':>12s}"
-            print(f"{s:>8s}  {comp:>10.4f}  {m_str}  {c_str}  {ci_str}")
+    # Current state table
+    print(f"\nCurrent state ({latest_ts[:16]}):")
+    print(f"{'Stn':>5s}  {'Td_dep':>7s}  {'Td_conv':>8s}  "
+          f"{'Td_circ':>8s}  {'Td_E':>7s}  "
+          f"{'T_circ':>7s}  {'T_E':>7s}  "
+          f"{'P_E':>8s}")
+    print("-" * 76)
 
-        print("\nPrecipitation assessment (ABRCE structural signal):")
-        for s in sorted(latest.keys()):
-            sig = latest[s]
-            comp = sig["composite"]
-            if comp > 0.5:
-                level = "HIGH -- multiple convergent indicators"
-            elif comp > 0.3:
-                level = "MODERATE -- some structural support"
-            elif comp > 0.1:
-                level = "LOW -- weak or isolated indicators"
-            else:
-                level = "MINIMAL -- no structural signal"
-            print(f"  {s} ({STATIONS[s]['name']}): {level}")
+    for s in sorted(latest.keys()):
+        sig = latest[s]
+        print(f"{s:>5s}  {fmt(sig.get('td_depression'))}  "
+              f"{fmt(sig.get('td_convergence_mean'), 8, 2)}  "
+              f"{fmts(sig.get('td_circulation'))}  "
+              f"{fmts(sig.get('td_e'), 7, 3)}  "
+              f"{fmts(sig.get('temp_circulation'), 7, 3)}  "
+              f"{fmts(sig.get('temp_e'), 7, 3)}  "
+              f"{fmts(sig.get('pressure_e'))}")
+
+    # Moisture ranking
+    td_deps = {s: sig.get("td_depression") for s, sig in latest.items()
+               if sig.get("td_depression") is not None}
+    if td_deps:
+        sorted_td = sorted(td_deps.items(), key=lambda x: x[1])
+        print(f"\nMoisture ranking (Td depression, lower = moister):")
+        for s, td in sorted_td:
+            label = "NEAR SAT" if td < 5 else ("moist" if td < 12 else (
+                "moderate" if td < 20 else "dry"))
+            print(f"  {s}: {td:.1f}F  ({label})")
+
+    # Convergence
+    td_convs = {s: sig.get("td_convergence_mean") for s, sig in latest.items()
+                if sig.get("td_convergence_mean") is not None and
+                sig.get("td_convergence_mean") > 0}
+    if td_convs:
+        sorted_conv = sorted(td_convs.items(), key=lambda x: -x[1])
+        print(f"\nMoisture convergence (positive = gradient inward):")
+        for s, c in sorted_conv:
+            edges = latest[s].get("td_convergence_edges", 0)
+            print(f"  {s}: {c:.2f}F mean ({edges} contributing edges)")
+
+    # Circulation
+    print(f"\nCirculation structure (R output, raw units):")
+    for s in sorted(latest.keys()):
+        sig = latest[s]
+        tc = sig.get("temp_circulation")
+        tdc = sig.get("td_circulation")
+        if tc is None and tdc is None:
+            print(f"  {s}: no data")
+            continue
+        tc_str = f"T={tc:+.4f}" if tc is not None else "T=M"
+        tdc_str = f"Td={tdc:+.4f}" if tdc is not None else "Td=M"
+        coherent = ""
+        if tc is not None and tdc is not None:
+            if (tc > 0) == (tdc > 0) and abs(tc) > 0.01 and abs(tdc) > 0.01:
+                coherent = " [COHERENT]"
+            elif abs(tc) > 0.1 or abs(tdc) > 0.1:
+                coherent = " [strong]"
+        print(f"  {s}: {tc_str}  {tdc_str}{coherent}")
+
+    # Temporal trend (last 6 snapshots)
+    sorted_times = sorted(signals.keys())
+    recent = sorted_times[-6:] if len(sorted_times) >= 6 else sorted_times
+
+    print(f"\nTd depression trend (last 6h, lower = wetter):")
+    print(f"{'Stn':>5s}  " + "  ".join(f"{t[11:16]:>6s}" for t in recent))
+    print("-" * (7 + 8 * len(recent)))
+    for s in sorted(graph.node_ids):
+        vals = []
+        for t in recent:
+            td = signals[t].get(s, {}).get("td_depression")
+            vals.append(f"{td:>6.1f}" if td is not None else f"{'M':>6s}")
+        print(f"{s:>5s}  " + "  ".join(vals))
+
+    print(f"\nTd_dep E trend (bounded evolution):")
+    print(f"{'Stn':>5s}  " + "  ".join(f"{t[11:16]:>7s}" for t in recent))
+    print("-" * (7 + 9 * len(recent)))
+    for s in sorted(graph.node_ids):
+        vals = []
+        for t in recent:
+            e = signals[t].get(s, {}).get("td_e")
+            vals.append(f"{e:>+7.3f}" if e is not None else f"{'M':>7s}")
+        print(f"{s:>5s}  " + "  ".join(vals))
+
+    # Structural assessment
+    print(f"\n--- Structural assessment (projection layer) ---")
+    print("  Reading operator outputs. No composite scores.\n")
+
+    for s in sorted(latest.keys()):
+        sig = latest[s]
+        indicators = []
+
+        td = sig.get("td_depression")
+        if td is not None and td < 12:
+            indicators.append(f"moist (Td_dep={td:.1f}F)")
+
+        conv = sig.get("td_convergence_mean")
+        edges = sig.get("td_convergence_edges", 0)
+        if conv is not None and conv > 0.5 and edges >= 2:
+            indicators.append(f"moisture converging ({conv:.1f}F, {edges} edges)")
+
+        tc = sig.get("temp_circulation")
+        tdc = sig.get("td_circulation")
+        if tc is not None and abs(tc) > 0.1:
+            indicators.append(f"thermal circulation (R={tc:+.3f})")
+        if tdc is not None and abs(tdc) > 0.1:
+            indicators.append(f"moisture circulation (R={tdc:+.3f})")
+
+        pe = sig.get("pressure_delta_e")
+        if pe is not None and abs(pe) > 0.001:
+            indicators.append(f"pressure evolving (dE={pe:+.4f})")
+
+        if len(indicators) >= 3:
+            level = "CONVERGENT"
+        elif len(indicators) >= 2:
+            level = "PARTIAL"
+        elif len(indicators) >= 1:
+            level = "ISOLATED"
+        else:
+            level = "NONE"
+
+        name = STATIONS[s]["name"]
+        print(f"  {s} ({name}): {level}")
+        for ind in indicators:
+            print(f"      {ind}")
+        if not indicators:
+            print(f"      (no precipitation-relevant structure)")
 
     return signals
-
 
 def save_results(evolution, signals, output_dir="data"):
     """Save analysis results."""
